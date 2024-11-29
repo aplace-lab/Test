@@ -1,0 +1,105 @@
+---
+- name: Set up mining OS
+  hosts: localhost
+  gather_facts: false
+  vars:
+    amd_driver: https://repo.radeon.com/amdgpu-install/5.4.1/ubuntu/focal/amdgpu-install_5.4.50401-1_all.deb
+    amd_memtweak: https://github.com/Eliovp/amdmemorytweak/releases/download/0.1.9.1/amdmemtweak
+    teamredminer: https://github.com/todxx/teamredminer/releases/download/v0.10.21/teamredminer-v0.10.21-linux.tgz
+  tasks:
+    - name: Install utilities
+      ansible.builtin.package:
+        name:
+          - openssh-server
+          - vim
+          - clinfo
+
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: auto
+
+    - name: Check if AMD devices are present
+      shell: "lspci -nn | grep -i amd"
+      register: amd_devices
+      changed_when: False
+
+    - name: Install amdgpu-install
+      block:
+        - name: Download amdgpu-install package
+          ansible.builtin.get_url:
+            url: "{{ amd_driver }}"
+            dest: ~/amdgpu-install.deb
+        - name: Install amdgpu-install package
+          shell:
+            cmd: "dpkg -i ~/amdgpu-install.deb && sudo apt-get update && sudo apt-get install -y amdgpu"
+      always:
+        - name: Clean up driver download
+          ansible.builtin.file:
+            path: ~/amdgpu-install.deb
+            state: absent
+      when:
+        - amd_devices.rc == 0
+        - not packages['amdgpu-install'] is defined
+
+    - name: Configure AMD driver
+      block:
+        - name: Install driver
+          shell: "amdgpu-install -y --accept-eula --opencl=legacy --usecase=workstation,opencl --vulkan=pro"
+          register: configure_amd
+      when:
+        - amd_devices.rc == 0
+        - not packages['amdgpu'] is defined
+
+    - name: Install OpenCL packages for AMD
+      ansible.builtin.package:
+        name:
+          - ocl-icd-opencl-dev
+          - opencl-headers
+          - mesa-opencl-icd
+      when:
+        - amd_devices.rc == 0
+
+    - name: Install amdmemtweak
+      ansible.builtin.get_url:
+        url: "{{ amd_memtweak }}"
+        dest: /usr/bin/amdmemtweak
+        mode: 'u=rwx,g=rwx,o=rwx'
+      when:
+        - amd_devices.rc == 0
+
+    - name: Install mining software
+      block:
+        - name: Create directory
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+          with_items:
+            - /mining
+
+        - name: Install TeamRedMiner
+          ansible.builtin.unarchive:
+            src: "{{ teamredminer }}"
+            dest: /mining
+            remote_src: yes
+
+    - name: Update GRUB
+      ansible.builtin.lineinfile:
+        path: /etc/default/grub
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        backrefs: yes
+      with_items:
+        - {'regexp': '^GRUB_CMDLINE_LINUX_DEFAULT=.*', 'line': 'GRUB_CMDLINE_LINUX_DEFAULT="text amdgpu.dc=0 amdgpu.ppfeaturemask=0xffffffff"'}
+        - {'regexp': '^GRUB_CMDLINE_LINUX=.*', 'line': 'GRUB_CMDLINE_LINUX="net.ifnames=0 biosdevname=0"'}
+      register: grub_config
+
+    - name: Apply GRUB changes
+      shell: update-grub && update-initramfs -u -k all
+      when: grub_config is changed
+      register: grub_applied
+
+    - name: Reboot if required
+      shell: shutdown -r now
+      when:
+        - grub_applied is changed or
+          configure_amd is changed
