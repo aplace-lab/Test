@@ -13,6 +13,7 @@
     #    amd_driver: https://repo.radeon.com/amdgpu-install/6.2.4/ubuntu/noble/amdgpu-install_6.2.60204-1_all.deb
     amd_memtweak: https://github.com/Eliovp/amdmemorytweak/releases/download/0.1.9.1/amdmemtweak
     teamredminer: https://github.com/todxx/teamredminer/releases/download/v0.10.21/teamredminer-v0.10.21-linux.tgz
+    amber_kawpow_miner: https://github.com/aplace-lab/amber-kawpow-miner/releases/download/0.2.4/amber-kawpow-miner-linux
   tasks:
     - name: Install utilities
       ansible.builtin.package:
@@ -21,6 +22,8 @@
           - vim
           - clinfo
           - git
+          - curl
+          - jq
 
     - name: Gather package facts
       ansible.builtin.package_facts:
@@ -37,9 +40,11 @@
           ansible.builtin.get_url:
             url: "{{ amd_driver }}"
             dest: ~/amdgpu-install.deb
+            
         - name: Install amdgpu-install package
           shell:
             cmd: "dpkg -i ~/amdgpu-install.deb && sudo apt-get update && sudo apt-get install -y amdgpu"
+            
       always:
         - name: Clean up driver download
           ansible.builtin.file:
@@ -77,18 +82,29 @@
 
     - name: Install mining software
       block:
+        - name: Install mining dependencies
+          ansible.builtin.package:
+          name:
+            - libxcb-cursor0
+            - libxcb-xinerama0
+              
         - name: Create directory
           ansible.builtin.file:
-            path: "{{ item }}"
+            path: /mining
             state: directory
-          with_items:
-            - /mining
 
         - name: Install TeamRedMiner
           ansible.builtin.unarchive:
             src: "{{ teamredminer }}"
             dest: /mining
             remote_src: yes
+
+        - name: Download amber-kawpow-miner
+          ansible.builtin.get_url:
+            url: "{{ amber_kawpow_miner }}"
+            dest: /mining/amber-kawpow-miner
+            mode: 'u+rwx'
+            owner: root
 
     - name: Update GRUB
       ansible.builtin.lineinfile:
