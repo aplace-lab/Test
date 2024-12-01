@@ -29,7 +29,7 @@
       ansible.builtin.package_facts:
         manager: auto
 
-    - name: Check if AMD devices are present
+    - name: Check if AMD devices are present ### Not used
       shell: "lspci -nn | grep -i amd"
       register: amd_devices
       changed_when: False
@@ -51,7 +51,7 @@
             path: ~/amdgpu-install.deb
             state: absent
       when:
-        - amd_devices.rc == 0
+        #- amd_devices.rc == 0
         - not packages['amdgpu-install'] is defined
 
     - name: Configure AMD driver
@@ -60,7 +60,7 @@
           shell: "amdgpu-install -y --accept-eula --opencl=legacy --usecase=workstation,opencl --vulkan=pro"
           register: configure_amd
       when:
-        - amd_devices.rc == 0
+        #- amd_devices.rc == 0
         - not packages['amdgpu'] is defined
 
     - name: Install OpenCL packages for AMD
@@ -69,24 +69,24 @@
           - ocl-icd-opencl-dev
           - opencl-headers
           - mesa-opencl-icd
-      when:
-        - amd_devices.rc == 0
+      #when:
+        #- amd_devices.rc == 0
 
     - name: Install amdmemtweak
       ansible.builtin.get_url:
         url: "{{ amd_memtweak }}"
         dest: /usr/bin/amdmemtweak
         mode: 'u=rwx,g=rwx,o=rwx'
-      when:
-        - amd_devices.rc == 0
+      #when:
+        #- amd_devices.rc == 0
 
     - name: Install mining software
       block:
         - name: Install mining dependencies
           ansible.builtin.package:
-          name:
-            - libxcb-cursor0
-            - libxcb-xinerama0
+            name:
+              - libxcb-cursor0
+              - libxcb-xinerama0
               
         - name: Create directory
           ansible.builtin.file:
